@@ -8,14 +8,14 @@ This is a complete backend server for an E-commerce web application, built using
 
 ## Project Structure
 
-├── controllers/ # Logic for user, product, category, upload
-├── middleware/ # Auth middlewares
-├── models/ # MongoDB schemas
-├── routes/ # API routes
-├── uploads/ # Uploaded images
-├── server.js # Main server file
-├── .env # Environment variables
-└── README.md # Project documentation
+(1) controllers/ # Logic for user, product, category, upload
+(2) middleware/ # Auth middlewares
+(3) models/ # MongoDB schemas
+(4) routes/ # API routes
+(5) uploads/ # Uploaded images
+(6) server.js # Main server file
+(7) .env # Environment variables
+(8) README.md # Project documentation
 
 ---
 
