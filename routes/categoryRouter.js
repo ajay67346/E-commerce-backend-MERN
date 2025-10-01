@@ -7,9 +7,10 @@ router
   .route("/category")
   .get(categoryCtrl.getCategories)
   .post(auth, authAdmin, categoryCtrl.createCategory);
-
+   
 router
   .route("/category/:id")
+  .get(categoryCtrl.getSingleCategory)
   .delete(auth, authAdmin, categoryCtrl.deleteCategory)
   .put(auth, authAdmin, categoryCtrl.updateCategory);
 

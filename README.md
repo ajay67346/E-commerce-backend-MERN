@@ -19,7 +19,7 @@ This is a complete backend server for an E-commerce web application, built using
 
 ---
 
-## Technologies Used
+## Technologies Used y
 
 - **Node.js**
 - **Express.js**
@@ -137,3 +137,18 @@ Inspired by real-world eCommerce platforms.
 Built for learning, portfolio, and scalable development.
 
 # Thank You!!
+
+---------------------------------------------------------------------------------
+
+### PLANNING PHASE
+
+### I Understand the Requirements and Features
+
+First, decide what features my E-commerce platform will include. For example:
+
+- **User Authentication** (Sign up, Login, JWT)
+- **Product Listing**
+- **Product Categories**
+- **Search and Filter**
+- **Orders and Checkout**
+- **Admin Dashboard** (for managing products and orders)

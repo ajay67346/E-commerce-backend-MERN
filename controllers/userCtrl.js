@@ -1,22 +1,72 @@
-const Users = require("../models/userModel"); // Import User model
-const jwt = require("jsonwebtoken"); // For creating and verifying JWT tokens
-const bcrypt = require("bcrypt"); // For hashing passwords securely
+const Users = require("../models/userModel");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
+const { createAccessToken, createRefreshToken } = require("../utils/token");
 
-// Controller object to handle user-related operations
 const userCtrl = {
   // REGISTER FUNCTION
   register: async (req, res) => {
     try {
+      if (
+        !req.body ||
+        Object.keys(req.body).every(
+          (key) => req.body[key] === undefined || req.body[key] === ""
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          status: 400,
+          code: "VALIDATION_ERROR",
+          message:
+            "Request body is missing. Please provide name, email, and password.",
+          hint: "Make sure to send JSON data in the body with 'Content-Type: application/json'.",
+          requiredFields: ["name", "email", "password"],
+        });
+      }
+
       const { name, email, password } = req.body;
 
-      const user = await Users.findOne({ email });
-      if (user)
-        return res.status(400).json({ msg: "Email Already Registered" });
+      const missingFields = [];
+      if (!name) missingFields.push("name");
+      if (!email) missingFields.push("email");
+      if (!password) missingFields.push("password");
 
-      if (password.length < 6)
+      if (missingFields.length > 0) {
+        const formatFieldList = (fields) => {
+          if (fields.length === 1) return fields[0];
+          return (
+            fields.slice(0, -1).join(", ") + " and " + fields[fields.length - 1]
+          );
+        };
+
         return res.status(400).json({
-          msg: "Password must be at least 6 characters long",
+          status: 400,
+          success: false,
+          code: "FIELD_MISSING",
+          message: `Please provide ${formatFieldList(missingFields)}.`,
+          requiredFields: missingFields,
         });
+      }
+
+      const existingUser = await Users.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({
+          status: 400,
+          success: false,
+          code: "EMAIL_EXISTS",
+          message: "Email already registered.",
+        });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({
+          status: 400,
+          success: false,
+          code: "WEAK_PASSWORD",
+          message: "Password must be at least 6 characters long.",
+          hint: "Try using a stronger password with symbols or numbers.",
+        });
+      }
 
       const hashPassword = await bcrypt.hash(password, 10);
 
@@ -28,12 +78,32 @@ const userCtrl = {
 
       res.cookie("refreshtoken", refreshToken, {
         httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "Strict",
         path: "/user/refresh_token",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
-      res.json({ accessToken });
+      return res.status(201).json({
+        status: 201,
+        success: true,
+        message: "User registered successfully.",
+        data: {
+          user: {
+            id: newUser._id,
+            name: newUser.name,
+            email: newUser.email,
+          },
+        },
+      });
     } catch (err) {
-      return res.status(500).json({ msg: err.message });
+      return res.status(500).json({
+        status: 500,
+        success: false,
+        code: "SERVER_ERROR",
+        message: "Something went wrong on the server. Please try again later.",
+        details: err.message,
+      });
     }
   },
 
@@ -42,78 +112,252 @@ const userCtrl = {
     try {
       const { email, password } = req.body;
 
-      // Check if user exists with this email
+      const missingFields = [];
+      if (!email) missingFields.push("email");
+      if (!password) missingFields.push("password");
+
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          status: 400,
+          success: false,
+          code: "MISSING_FIELDS",
+          message: `Please enter ${missingFields.join(" and ")}.`,
+          requiredFields: missingFields,
+        });
+      }
+
       const user = await Users.findOne({ email });
-      if (!user) return res.status(400).json({ msg: "User does not exist." });
+      if (!user) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          code: "USER_NOT_FOUND",
+          message: "User with this email does not exist.",
+        });
+      }
 
-      // Compare password with hashed password
       const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(400).json({ msg: "Incorrect password." });
+      if (!isMatch) {
+        return res.status(401).json({
+          status: 401,
+          success: false,
+          code: "INVALID_CREDENTIALS",
+          message: "Incorrect password.",
+        });
+      }
 
-      // If all good, generate tokens
       const accessToken = createAccessToken({ id: user._id });
       const refreshToken = createRefreshToken({ id: user._id });
 
-      // Set refresh token in cookie
+      // Set cookie
       res.cookie("refreshtoken", refreshToken, {
         httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "Strict",
         path: "/user/refresh_token",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
-      res.json({ accessToken });
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        message: "You have logged in successfully.",
+        data: {
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+          },
+          tokens: {
+            accessToken,
+            expiresIn: 86400,
+          },
+        },
+      });
     } catch (err) {
-      return res.status(500).json({ msg: err.message });
+      console.error("Login error:", err);
+      return res.status(500).json({
+        success: false,
+        status: 500,
+        code: "SERVER_ERROR",
+        message: "An unexpected error occurred during login.",
+        details: err.message,
+      });
     }
   },
 
   // LOGOUT FUNCTION
   logout: async (req, res) => {
     try {
-      // Remove the refresh token cookie
-      res.clearCookie("refreshtoken", { path: "/user/refresh_token" });
-      return res.json({ msg: "Logged out successfully." });
+      const refreshToken = req.cookies.refreshtoken;
+
+      //Step 1: Check if refresh token is present
+      if (!refreshToken) {
+        return res.status(400).json({
+          status: 400,
+          success: false,
+          message: "Refresh token not found in cookies.",
+        });
+      }
+
+      //Step 3: Clear the cookie securely
+      res.clearCookie("refreshtoken", {
+        path: "/user/refresh_token", // same path as when you set it
+        httpOnly: true,
+        secure: true,
+        sameSite: "Strict",
+      });
+
+      //Step 4: Send success response
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        message: "You have been logged out successfully.",
+      });
     } catch (err) {
-      return res.status(500).json({ msg: err.message });
+      //Error handling
+      return res.status(500).json({
+        success: false,
+        status: 500,
+        code: "LOGOUT_FAILED",
+        message: "An error occurred while logging out.",
+        details: err.message,
+      });
     }
   },
+
   // GET USER
   getUser: async (req, res) => {
     try {
       const user = await Users.findById(req.user.id).select("-password");
-      if (!user) return res.status(400).json({ msg: "User Not Found" });
-      res.json(user);
-    } catch (err) {}
+      if (!user) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          code: "USER_NOT_FOUND",
+          message: "User not found.",
+          userId: req.user.id,
+        });
+      }
+
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        message: "User fetched successfully.",
+        data: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          
+        },
+      });
+    } catch (err) {
+      console.error("Get user error:", err);
+      return res.status(500).json({
+        status: 500,
+        success: false,
+        code: "SERVER_ERROR",
+        message: "Server error while fetching user.",
+        details: err.message,
+      });
+    }
   },
+
+  // GET USER BY ID
+  getUserById: async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const user = await Users.findById(userId).select("-password");
+
+      if (!user) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          code: "USER_NOT_FOUND",
+          message: "User not found.",
+          userId,
+        });
+      }
+
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        message: "User fetched successfully.",
+        data: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          
+        },
+      });
+    } catch (err) {
+      console.error("Admin get user error:", err);
+      return res.status(500).json({
+        status: 500,
+        success: false,
+        code: "SERVER_ERROR",
+        message: "Server error while fetching user.",
+        details: err.message,
+      });
+    }
+  },
+
   // REFRESH TOKEN FUNCTION
   refreshtoken: async (req, res) => {
     try {
-      const rf_token = req.cookies.refreshtoken;
-      if (!rf_token) return res.status(400).json({ msg: "Please login now." });
+      const rf_token = req.cookies?.refreshtoken;
 
-      const user = jwt.verify(rf_token, process.env.REFRESH_TOKEN_SECRET);
-      if (!user) return res.status(400).json({ msg: "Please login now." });
+      if (!rf_token) {
+        return res.status(401).json({
+          status: 401,
+          success: false,
+          code: "MISSING_REFRESH_TOKEN",
+          message: "Refresh token missing. Please log in again.",
+          hint: "Make sure cookies are enabled and valid refresh token is present.",
+        });
+      }
 
-      const accessToken = createAccessToken({ id: user.id });
+      let payload;
+      try {
+        payload = jwt.verify(rf_token, process.env.REFRESH_TOKEN_SECRET);
+      } catch (verifyErr) {
+        console.error("Refresh token verify error:", verifyErr);
+        return res.status(403).json({
+          status: 403,
+          success: false,
+          code: "INVALID_REFRESH_TOKEN",
+          message: "Invalid or expired refresh token. Please log in again.",
+          details: verifyErr.message,
+        });
+      }
 
-      res.json({ user, accessToken });
+      const accessToken = createAccessToken({ id: payload.id });
+
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        message: "Access token refreshed successfully.",
+        data: {
+          accessToken,
+          expiresIn: 86400,
+          tokenType: "Bearer",
+          user: {
+            id: payload.id,
+          },
+        },
+      });
     } catch (err) {
-      return res.status(500).json({ msg: err.message });
+      console.error("Refresh token error:", err);
+      return res.status(500).json({
+        status: 500,
+        success: false,
+        code: "SERVER_ERROR",
+        message: "Server error while refreshing token.",
+        details: err.message,
+      });
     }
   },
-};
-
-// ACCESS TOKEN FUNCTION
-const createAccessToken = (payload) => {
-  return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
-    expiresIn: "1d",
-  });
-};
-
-// REFRESH TOKEN FUNCTION
-const createRefreshToken = (payload) => {
-  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, {
-    expiresIn: "7d",
-  });
 };
 
 module.exports = userCtrl;
