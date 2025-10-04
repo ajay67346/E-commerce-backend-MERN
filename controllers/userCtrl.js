@@ -7,6 +7,7 @@ const userCtrl = {
   // REGISTER FUNCTION
   register: async (req, res) => {
     try {
+      // Step 1: Empty request check
       if (
         !req.body ||
         Object.keys(req.body).every(
@@ -24,8 +25,9 @@ const userCtrl = {
         });
       }
 
-      const { name, email, password } = req.body;
+      const { name, email, password, role } = req.body;
 
+      // Step 2: Required fields check
       const missingFields = [];
       if (!name) missingFields.push("name");
       if (!email) missingFields.push("email");
@@ -48,6 +50,7 @@ const userCtrl = {
         });
       }
 
+      // Step 3: Check if email already exists
       const existingUser = await Users.findOne({ email });
       if (existingUser) {
         return res.status(400).json({
@@ -58,6 +61,7 @@ const userCtrl = {
         });
       }
 
+      // Step 4: Password length validation
       if (password.length < 6) {
         return res.status(400).json({
           status: 400,
@@ -68,11 +72,46 @@ const userCtrl = {
         });
       }
 
+      //Step 5: Role validation with ADMIN check via ENV
+      let assignedRole = "user"; // default
+
+      if (role === "vendor") {
+        assignedRole = "vendor";
+      } else if (role === "admin") {
+        if (email === process.env.ADMIN_EMAIL) {
+          assignedRole = "admin"; //allow only if email matches ENV
+        } else {
+          return res.status(403).json({
+            status: 403,
+            success: false,
+            code: "FORBIDDEN_ROLE",
+            message: "You are not allowed to register with this role.",
+            allowedRoles: ["user", "vendor"],
+          });
+        }
+      } else if (role && role !== "user") {
+        return res.status(403).json({
+          status: 403,
+          success: false,
+          code: "FORBIDDEN_ROLE",
+          message: "You are not allowed to register with this role.",
+          allowedRoles: ["user", "vendor"],
+        });
+      }
+
+      // Step 6: Password hashing
       const hashPassword = await bcrypt.hash(password, 10);
 
-      const newUser = new Users({ name, email, password: hashPassword });
+      const newUser = new Users({
+        name,
+        email,
+        password: hashPassword,
+        role: assignedRole,
+      });
+
       await newUser.save();
 
+      // Step 7: Token creation
       const accessToken = createAccessToken({ id: newUser._id });
       const refreshToken = createRefreshToken({ id: newUser._id });
 
@@ -81,9 +120,10 @@ const userCtrl = {
         secure: process.env.NODE_ENV === "production",
         sameSite: "Strict",
         path: "/user/refresh_token",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 
+      // Step 8: Return response
       return res.status(201).json({
         status: 201,
         success: true,
@@ -93,6 +133,7 @@ const userCtrl = {
             id: newUser._id,
             name: newUser.name,
             email: newUser.email,
+            role: newUser.role,
           },
         },
       });
@@ -106,7 +147,6 @@ const userCtrl = {
       });
     }
   },
-
   // LOGIN FUNCTION
   login: async (req, res) => {
     try {
@@ -226,17 +266,33 @@ const userCtrl = {
     }
   },
 
-  // GET USER
-  getUser: async (req, res) => {
+  // GET USER BY ID
+  getUserByAdmin: async (req, res) => {
     try {
-      const user = await Users.findById(req.user.id).select("-password");
-      if (!user) {
+      const currentUser = await Users.findById(req.user.id).select("-password");
+
+      if (!currentUser) {
         return res.status(404).json({
           status: 404,
           success: false,
           code: "USER_NOT_FOUND",
-          message: "User not found.",
-          userId: req.user.id,
+          message: "Logged-in user not found.",
+        });
+      }
+
+      // If admin, allow fetching any user by ID from req.params.id
+      const targetUserId =
+        currentUser.role === "admin" ? req.params.id : req.user.id;
+
+      const user = await Users.findById(targetUserId).select("-password");
+
+      if (!user) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          code: "TARGET_USER_NOT_FOUND",
+          message: "Requested user not found.",
+          userId: targetUserId,
         });
       }
 
@@ -248,7 +304,7 @@ const userCtrl = {
           id: user._id,
           name: user.name,
           email: user.email,
-          
+          role: user.role,
         },
       });
     } catch (err) {
@@ -263,36 +319,71 @@ const userCtrl = {
     }
   },
 
-  // GET USER BY ID
-  getUserById: async (req, res) => {
+  getUserByVendor: async (req, res) => {
     try {
-      const userId = req.params.id;
-      const user = await Users.findById(userId).select("-password");
+      const currentUser = await Users.findById(req.user.id).select("-password");
+
+      if (!currentUser) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          code: "USER_NOT_FOUND",
+          message: "Logged-in user not found.",
+        });
+      }
+
+      // Allow only vendors to use this route
+      if (currentUser.role !== "vendor") {
+        return res.status(403).json({
+          status: 403,
+          success: false,
+          code: "FORBIDDEN",
+          message: "Only vendors are allowed to access this route.",
+        });
+      }
+
+      // If no ID is provided, return the vendor's own profile
+      const targetUserId = req.params.id || req.user.id;
+
+      const user = await Users.findById(targetUserId).select("-password");
 
       if (!user) {
         return res.status(404).json({
           status: 404,
           success: false,
-          code: "USER_NOT_FOUND",
-          message: "User not found.",
-          userId,
+          code: "TARGET_USER_NOT_FOUND",
+          message: "Requested user not found.",
+          userId: targetUserId,
+        });
+      }
+
+      // Vendors cannot access admins or other vendors
+      if (
+        user.role === "admin" ||
+        (user.role === "vendor" && user._id.toString() !== req.user.id)
+      ) {
+        return res.status(403).json({
+          status: 403,
+          success: false,
+          code: "ACCESS_DENIED",
+          message:
+            "Vendors are not allowed to access admin or other vendor profiles.",
         });
       }
 
       return res.status(200).json({
         status: 200,
         success: true,
-        message: "User fetched successfully.",
+        message: "User profile fetched successfully.",
         data: {
           id: user._id,
           name: user.name,
           email: user.email,
           role: user.role,
-          
         },
       });
     } catch (err) {
-      console.error("Admin get user error:", err);
+      console.error("Get user by vendor error:", err);
       return res.status(500).json({
         status: 500,
         success: false,
@@ -302,7 +393,6 @@ const userCtrl = {
       });
     }
   },
-
   // REFRESH TOKEN FUNCTION
   refreshtoken: async (req, res) => {
     try {

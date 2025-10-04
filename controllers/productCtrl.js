@@ -20,12 +20,10 @@ const productCtrl = {
         .fieldLimiting();
 
       const products = await features.query;
-      const total = await Products.countDocuments(
-        features.query._conditions
-      );
+      const total = await Products.countDocuments(features.query._conditions);
 
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
+      const limit = parseInt(req.query.size) || 10;
       const totalPages = Math.ceil(total / limit);
       const hasMore = page < totalPages;
 

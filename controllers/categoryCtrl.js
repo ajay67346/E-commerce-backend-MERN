@@ -22,7 +22,7 @@ const categoryCtrl = {
       );
 
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
+      const limit = parseInt(req.query.size) || 10;
       const total = Math.ceil(totalCategories / limit);
       const hasMore = page < total;
 
@@ -173,7 +173,6 @@ const categoryCtrl = {
           code: 404,
           errorType: "NotFoundError",
           message: "Category not found.",
-          
         });
       }
 

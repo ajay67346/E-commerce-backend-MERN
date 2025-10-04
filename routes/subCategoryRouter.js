@@ -10,6 +10,7 @@ router
 
 router
   .route("/subcategory/:id")
-  .delete(auth, authAdmin, subCategoryCtrl.deleteSubCategory);
+  .delete(auth, authAdmin, subCategoryCtrl.deleteSubCategory)
+  .put(auth, authAdmin, subCategoryCtrl.updateSubCategory);
 
 module.exports = router;

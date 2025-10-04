@@ -1,8 +1,6 @@
 const mongoose = require("mongoose");
-
 const validator = require("validator");
 
-// User schema definition
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -27,15 +25,16 @@ const userSchema = new mongoose.Schema(
       minlength: [6, "Password must be at least 6 characters"],
     },
     role: {
-      type: Number,
-      default: 0, // 0 = user, 1 = admin (example)
+      type: String,
+      enum: ["user", "admin", "vendor"],
+      default: "user",
     },
     cart: {
       type: [
         {
           productId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "Product", // assumes you have a Product model
+            ref: "Product",
             required: true,
           },
           quantity: {
@@ -48,10 +47,7 @@ const userSchema = new mongoose.Schema(
       default: [],
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
-
 
 module.exports = mongoose.model("User", userSchema);

@@ -5,7 +5,34 @@ const { respondSuccess, respondError } = require("../utils/featuresResponse");
 const getAllUserCtrl = {
   getAllUsers: async (req, res) => {
     try {
-      const features = new APIfeatures(Users.find(), req.query)
+      const currentUser = await Users.findById(req.user.id);
+      if (!currentUser) {
+        return respondError(res, 401, {
+          message: "Unauthorized. User not found.",
+        });
+      }
+
+      let query;
+
+      //Role-based filtering
+      if (currentUser.role === "user") {
+        return respondError(res, 403, {
+          message: "Access denied. Users are not allowed to view user list.",
+        });
+      } else if (currentUser.role === "vendor") {
+        //Vendor can only see users — NOT vendors or admins
+        query = Users.find({ role: "user" });
+      } else if (currentUser.role === "admin") {
+        //Admin can see all users
+        query = Users.find();
+      } else {
+        return respondError(res, 403, {
+          message: "Access denied. Invalid role.",
+        });
+      }
+
+      // Apply filters, sorting, pagination
+      const features = new APIfeatures(query, req.query)
         .filtering()
         .sorting()
         .paginating()
@@ -15,7 +42,7 @@ const getAllUserCtrl = {
       const total = await Users.countDocuments(features.query._conditions);
 
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
+      const limit = parseInt(req.query.size) || 10;
       const totalPages = Math.ceil(total / limit);
       const hasMore = page < totalPages;
 
@@ -37,11 +64,12 @@ const getAllUserCtrl = {
         });
       }
 
+      //Format users
       const formattedUsers = users.map((user) => ({
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role === 1 ? "admin" : "user",
+        role: user.role,
       }));
 
       return respondSuccess(
