@@ -7,11 +7,13 @@ const productCtrl = {
   getProducts: async (req, res) => {
     try {
       const features = new APIfeatures(
-        Products.find().populate({
-          path: "subCategory",
-          select: "name category",
-          populate: { path: "category", select: "name" },
-        }),
+        Products.find()
+          .select("-createdAt -updatedAt")
+          .populate({
+            path: "subCategory",
+            select: "name category",
+            populate: { path: "category", select: "name" },
+          }),
         req.query
       )
         .filtering()
@@ -39,7 +41,6 @@ const productCtrl = {
               total,
               totalPages,
               hasMore: false,
-              filtersApplied: req.query,
             },
           },
         });
@@ -69,7 +70,6 @@ const productCtrl = {
             total,
             totalPages,
             hasMore,
-            filtersApplied: req.query,
           },
         }
       );
@@ -110,8 +110,6 @@ const productCtrl = {
         images: product.images,
         subCategory: product.subCategory?.name || null,
         category: product.subCategory?.category?.name || null,
-        createdAt: product.createdAt,
-        updatedAt: product.updatedAt,
       };
 
       return res.status(200).json({
@@ -142,6 +140,17 @@ const productCtrl = {
         subCategory,
       } = req.body;
 
+      //Get user info from auth middleware
+      const user = req.user;
+
+      //Only allow admin or vendor
+      if (!["admin", "vendor"].includes(user.role)) {
+        return res
+          .status(403)
+          .json({ message: "Access denied. Unauthorized role." });
+      }
+
+      //Validate fields
       if (!product_id || product_id.trim() === "") {
         return res.status(400).json({ message: "Product ID is required." });
       }
@@ -180,22 +189,25 @@ const productCtrl = {
           .json({ message: "This product already exists." });
       }
 
+      //Create new product
       const newProduct = new Products({
         product_id,
         title: title.toLowerCase().trim(),
+        subCategory,
         price,
         description,
         content,
         images,
-        subCategory,
+        createdBy: user.id,
+        createdByRole: user.role,
       });
 
       await newProduct.save();
 
       return res.status(201).json({
+        status: 201,
         message: "Product created successfully.",
         product: newProduct,
-        timestamp: new Date().toISOString(),
       });
     } catch (err) {
       return res.status(500).json({ message: "Server error: " + err.message });
@@ -206,6 +218,15 @@ const productCtrl = {
     try {
       const { title, price, description, content, images, subCategory } =
         req.body;
+
+      // ✅ Role check added here
+      const user = req.user;
+      if (!["admin", "vendor"].includes(user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. You are not allowed to update products.",
+        });
+      }
 
       if (!images || !Array.isArray(images) || images.length === 0) {
         return res.status(400).json({
@@ -232,6 +253,8 @@ const productCtrl = {
           content,
           images,
           ...(subCategory && { subCategory }),
+          createdBy: user.id,
+          createdByRole: user.role,
         },
         { new: true }
       ).populate({
@@ -244,16 +267,14 @@ const productCtrl = {
           success: false,
           message: "Product not found. Update failed.",
           productId: req.params.id,
-          timestamp: new Date().toISOString(),
         });
       }
 
       res.status(200).json({
+        status_Code: 200,
         success: true,
         message: "Product updated successfully.",
-        productId: updatedProduct._id,
         product: updatedProduct,
-        timestamp: new Date().toISOString(),
       });
     } catch (err) {
       res.status(500).json({
@@ -264,17 +285,36 @@ const productCtrl = {
       });
     }
   },
-
   deleteProduct: async (req, res) => {
     try {
-      const deletedProduct = await Products.findByIdAndDelete(req.params.id);
+      const user = req.user;
+
+      // Allow only admin or vendor
+      if (!["admin", "vendor"].includes(user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. Only admin or vendor can delete products.",
+        });
+      }
+
+      let deletedProduct;
+
+      if (user.role === "vendor") {
+        // Vendor can delete only their own products
+        deletedProduct = await Products.findOneAndDelete({
+          _id: req.params.id,
+          createdBy: user.id,
+        });
+      } else {
+        // Admin can delete any product
+        deletedProduct = await Products.findByIdAndDelete(req.params.id);
+      }
 
       if (!deletedProduct) {
         return res.status(404).json({
           success: false,
-          message: "Product not found. Nothing was deleted.",
+          message: "Product not found or not allowed to delete.",
           productId: req.params.id,
-          timestamp: new Date().toISOString(),
         });
       }
 
@@ -287,8 +327,9 @@ const productCtrl = {
           price: deletedProduct.price,
           subCategory: deletedProduct.subCategory,
           images: deletedProduct.images,
+          createdBy: deletedProduct.createdBy, // Corrected here
+          createdByRole: deletedProduct.createdByRole, // Corrected here
         },
-        timestamp: new Date().toISOString(),
       });
     } catch (err) {
       res.status(500).json({
@@ -300,5 +341,4 @@ const productCtrl = {
     }
   },
 };
-
 module.exports = productCtrl;

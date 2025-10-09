@@ -73,9 +73,9 @@ const subCategoryCtrl = {
               currentPage: page,
               Size: limit,
               totalSubCategories,
-              total,
+              total_Page:total,
               hasMore: false,
-              filtersApplied: req.query,
+              
             },
           },
         });
@@ -92,9 +92,9 @@ const subCategoryCtrl = {
             currentPage: page,
             Size: limit,
             totalSubCategories,
-            total,
+            total_page:total,
             hasMore,
-            filtersApplied: req.query,
+            
           },
         }
       );

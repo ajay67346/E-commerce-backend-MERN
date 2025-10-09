@@ -207,6 +207,7 @@ const userCtrl = {
             id: user._id,
             name: user.name,
             email: user.email,
+            role: user.role,
           },
           tokens: {
             accessToken,
@@ -266,8 +267,7 @@ const userCtrl = {
     }
   },
 
-  // GET USER BY ID
-  getUserByAdmin: async (req, res) => {
+  getUserProfile: async (req, res) => {
     try {
       const currentUser = await Users.findById(req.user.id).select("-password");
 
@@ -280,9 +280,8 @@ const userCtrl = {
         });
       }
 
-      // If admin, allow fetching any user by ID from req.params.id
-      const targetUserId =
-        currentUser.role === "admin" ? req.params.id : req.user.id;
+      const { id } = req.params;
+      const targetUserId = id || req.user.id;
 
       const user = await Users.findById(targetUserId).select("-password");
 
@@ -296,78 +295,44 @@ const userCtrl = {
         });
       }
 
-      return res.status(200).json({
-        status: 200,
-        success: true,
-        message: "User fetched successfully.",
-        data: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-      });
-    } catch (err) {
-      console.error("Get user error:", err);
-      return res.status(500).json({
-        status: 500,
-        success: false,
-        code: "SERVER_ERROR",
-        message: "Server error while fetching user.",
-        details: err.message,
-      });
-    }
-  },
+      // ✅ Role-based access control:
+      if (currentUser.role === "admin") {
+        // Admin: allowed to access anyone
+      } else if (currentUser.role === "vendor") {
+        const isOwnProfile = user._id.toString() === currentUser._id.toString();
 
-  getUserByVendor: async (req, res) => {
-    try {
-      const currentUser = await Users.findById(req.user.id).select("-password");
+        // ❌ Vendor can't access other vendor or admin profiles
+        if (
+          user.role === "admin" ||
+          (user.role === "vendor" && !isOwnProfile)
+        ) {
+          return res.status(403).json({
+            status: 403,
+            success: false,
+            code: "ACCESS_DENIED",
+            message:
+              "Vendors are not allowed to access admin or other vendor profiles.",
+          });
+        }
+      } else if (currentUser.role === "user") {
+        // ❌ Normal user can only view their own profile
+        const isOwnProfile = user._id.toString() === currentUser._id.toString();
 
-      if (!currentUser) {
-        return res.status(404).json({
-          status: 404,
-          success: false,
-          code: "USER_NOT_FOUND",
-          message: "Logged-in user not found.",
-        });
-      }
-
-      // Allow only vendors to use this route
-      if (currentUser.role !== "vendor") {
+        if (!isOwnProfile) {
+          return res.status(403).json({
+            status: 403,
+            success: false,
+            code: "ACCESS_DENIED",
+            message: "Users are only allowed to access their own profile.",
+          });
+        }
+      } else {
+        // ❌ Any unknown roles
         return res.status(403).json({
           status: 403,
           success: false,
           code: "FORBIDDEN",
-          message: "Only vendors are allowed to access this route.",
-        });
-      }
-
-      // If no ID is provided, return the vendor's own profile
-      const targetUserId = req.params.id || req.user.id;
-
-      const user = await Users.findById(targetUserId).select("-password");
-
-      if (!user) {
-        return res.status(404).json({
-          status: 404,
-          success: false,
-          code: "TARGET_USER_NOT_FOUND",
-          message: "Requested user not found.",
-          userId: targetUserId,
-        });
-      }
-
-      // Vendors cannot access admins or other vendors
-      if (
-        user.role === "admin" ||
-        (user.role === "vendor" && user._id.toString() !== req.user.id)
-      ) {
-        return res.status(403).json({
-          status: 403,
-          success: false,
-          code: "ACCESS_DENIED",
-          message:
-            "Vendors are not allowed to access admin or other vendor profiles.",
+          message: "You do not have permission to access this route.",
         });
       }
 
@@ -383,12 +348,12 @@ const userCtrl = {
         },
       });
     } catch (err) {
-      console.error("Get user by vendor error:", err);
+      console.error("Get user profile error:", err);
       return res.status(500).json({
         status: 500,
         success: false,
         code: "SERVER_ERROR",
-        message: "Server error while fetching user.",
+        message: "Server error while fetching user profile.",
         details: err.message,
       });
     }

@@ -6,6 +6,7 @@ const getAllUserCtrl = {
   getAllUsers: async (req, res) => {
     try {
       const currentUser = await Users.findById(req.user.id);
+
       if (!currentUser) {
         return respondError(res, 401, {
           message: "Unauthorized. User not found.",
@@ -14,16 +15,16 @@ const getAllUserCtrl = {
 
       let query;
 
-      //Role-based filtering
+      // filtering according to role
       if (currentUser.role === "user") {
         return respondError(res, 403, {
           message: "Access denied. Users are not allowed to view user list.",
         });
       } else if (currentUser.role === "vendor") {
-        //Vendor can only see users — NOT vendors or admins
+        // Vendor only can see role 'user'
         query = Users.find({ role: "user" });
       } else if (currentUser.role === "admin") {
-        //Admin can see all users
+        // Admin can see all
         query = Users.find();
       } else {
         return respondError(res, 403, {
@@ -31,7 +32,7 @@ const getAllUserCtrl = {
         });
       }
 
-      // Apply filters, sorting, pagination
+      //Apply Filters, sort, pagination
       const features = new APIfeatures(query, req.query)
         .filtering()
         .sorting()
@@ -49,7 +50,6 @@ const getAllUserCtrl = {
       if (page > totalPages && total !== 0) {
         return respondError(res, 404, {
           message: `Page ${page} not found. Only ${totalPages} pages available.`,
-          details: null,
           extra: {
             data: { users: [], count: 0 },
             pagination: {
@@ -58,13 +58,13 @@ const getAllUserCtrl = {
               total,
               totalPages,
               hasMore: false,
-              filtersApplied: req.query,
+              
             },
           },
         });
       }
 
-      //Format users
+      // Format users before sending
       const formattedUsers = users.map((user) => ({
         id: user._id,
         name: user.name,
@@ -84,7 +84,7 @@ const getAllUserCtrl = {
             total,
             totalPages,
             hasMore,
-            filtersApplied: req.query,
+            
           },
         }
       );

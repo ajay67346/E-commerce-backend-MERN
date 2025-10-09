@@ -8,7 +8,10 @@ const categoryCtrl = {
   getCategories: async (req, res) => {
     try {
       const features = new APIfeatures(
-        category.find().populate("subcategories"),
+        category
+          .find()
+          .select("-createdAt -updatedAt")
+          .populate("subcategories"),
         req.query
       )
         .filtering()
@@ -36,9 +39,8 @@ const categoryCtrl = {
               currentPage: page,
               Size: limit,
               totalCategories,
-              total,
+              totalPage: total,
               hasMore: false,
-              filtersApplied: req.query,
             },
           },
         });
@@ -54,9 +56,8 @@ const categoryCtrl = {
             currentPage: page,
             Size: limit,
             totalCategories,
-            total,
+            totalPage: total,
             hasMore,
-            filtersApplied: req.query,
           },
         }
       );
