@@ -1,7 +1,10 @@
 const Users = require("../models/userModel");
+const CartHistory = require("../models/cartHistory");
+const Products = require("../models/productModel");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { createAccessToken, createRefreshToken } = require("../utils/token");
+const mongoose = require("mongoose");
 
 const userCtrl = {
   // REGISTER FUNCTION
@@ -227,6 +230,98 @@ const userCtrl = {
     }
   },
 
+  addToCart: async (req, res) => {
+    try {
+      const userId = req.user.id;
+
+      if (!req.body || Object.keys(req.body).length === 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Request body is empty. Required fields: productId and optionally quantity.",
+        });
+      }
+
+      const { productId, quantity } = req.body;
+
+      if (!productId) {
+        return res.status(400).json({
+          success: false,
+          message: "ProductId is required.",
+        });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(productId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid product ID format.",
+        });
+      }
+
+      const product = await Products.findById(productId).populate({
+        path: "subCategory",
+        populate: {
+          path: "category",
+          model: "Category",
+        },
+      });
+
+      console.log("✅ Full Product:", JSON.stringify(product, null, 2));
+      console.log("📦 SubCategory:", product.subCategory);
+      console.log(
+        "📂 Category inside SubCategory:",
+        product.subCategory?.category
+      );
+
+      if (!product) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Product not found." });
+      }
+
+      const qty = quantity && quantity > 0 ? quantity : 1;
+      const totalPrice = product.price * qty;
+
+      const user = await Users.findById(userId);
+      if (!user) {
+        return res
+          .status(404)
+          .json({ success: false, message: "User not found." });
+      }
+
+      const historyEntry = new CartHistory({
+        userId,
+        productId,
+        quantity: qty,
+        totalPrice,
+        title: product.title,
+        subCategory: product.subCategory?.name || "Unknown",
+        category: product.subCategory?.category?.name || "Unknown",
+      });
+      // console.log(historyEntry);
+      await historyEntry.save();
+
+      const cleanHistory = historyEntry.toObject();
+      delete cleanHistory._id;
+      delete cleanHistory.__v;
+      delete cleanHistory.createdAt;
+      delete cleanHistory.updatedAt;
+      delete cleanHistory.addedAt;
+
+      return res.status(200).json({
+        success: true,
+        message: "Product added to cart history successfully.",
+        historyEntry: cleanHistory,
+      });
+    } catch (err) {
+      console.error("Add to cart error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Something went wrong while adding product to cart.",
+        error: err.message,
+      });
+    }
+  },
   // LOGOUT FUNCTION
   logout: async (req, res) => {
     try {

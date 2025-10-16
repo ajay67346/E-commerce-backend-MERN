@@ -6,11 +6,14 @@ class APIfeatures {
 
   filtering() {
     const rawQuery = { ...this.queryString };
-    const excludedFields = ["page", "sort", "size", "fields"];
+
+    // Exclude special fields from regular filtering
+    const excludedFields = ["page", "sort", "size", "fields", "search"];
     excludedFields.forEach((el) => delete rawQuery[el]);
 
     const queryObj = {};
 
+    // Advanced filtering: like price[gte]=100
     for (const key in rawQuery) {
       if (key.includes("[")) {
         const [field, operator] = key.split(/\[|\]/).filter(Boolean);
@@ -23,6 +26,15 @@ class APIfeatures {
           ? rawQuery[key]
           : Number(rawQuery[key]);
       }
+    }
+
+    // 🔍 Add support for ?search=keyword (regex match in title or description)
+    if (this.queryString.search) {
+      const keyword = this.queryString.search;
+      queryObj["$or"] = [
+        { title: { $regex: keyword, $options: "i" } },
+        { description: { $regex: keyword, $options: "i" } }
+      ];
     }
 
     this.query = this.query.find(queryObj);

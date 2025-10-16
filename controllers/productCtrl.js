@@ -22,6 +22,7 @@ const productCtrl = {
         .fieldLimiting();
 
       const products = await features.query;
+      console.log(products[0])
       const total = await Products.countDocuments(features.query._conditions);
 
       const page = parseInt(req.query.page) || 1;
